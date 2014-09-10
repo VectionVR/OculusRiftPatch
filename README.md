@@ -5,7 +5,8 @@ VR Stabilizer brings this extra step to the Oculus rift. For more information pl
 
 *How to use*
 
-Go to Oculus source patch files and follow the tutorial described in there 
+Go to **Oculus source patch files** and follow the tutorial described in there 
+
 
 ###### *Vection VR is in no way affiliated with Oculus VR inc.* ######
 
