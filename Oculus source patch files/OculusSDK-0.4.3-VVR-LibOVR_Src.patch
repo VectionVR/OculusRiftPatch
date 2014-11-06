@@ -1,7 +1,6 @@
-Binary files ./.DS_Store and ../../../OculusSDK/LibOVR/Src/.DS_Store differ
-diff -rupN ./OVR_CAPI.cpp ../../../OculusSDK/LibOVR/Src/OVR_CAPI.cpp
+diff -rupN --exclude=.svn --exclude=.DS_Store ./OVR_CAPI.cpp ../../../OculusSDK/LibOVR/Src/OVR_CAPI.cpp
 --- ./OVR_CAPI.cpp	2014-10-28 22:55:20.000000000 +0100
-+++ ../../../OculusSDK/LibOVR/Src/OVR_CAPI.cpp	2014-10-28 22:57:29.000000000 +0100
++++ ../../../OculusSDK/LibOVR/Src/OVR_CAPI.cpp	2014-11-06 10:18:03.000000000 +0100
 @@ -34,7 +34,7 @@ limitations under the License.
  
  #include "CAPI/CAPI_HMDState.h"
@@ -21,8 +20,26 @@ diff -rupN ./OVR_CAPI.cpp ../../../OculusSDK/LibOVR/Src/OVR_CAPI.cpp
  OVR_EXPORT void ovr_InitializeRenderingShim()
  {
      OVR::System::DirectDisplayInitialize();
-Binary files ./Service/.DS_Store and ../../../OculusSDK/LibOVR/Src/Service/.DS_Store differ
-diff -rupN ./Service/Service_VVRNetClient.cpp ../../../OculusSDK/LibOVR/Src/Service/Service_VVRNetClient.cpp
+@@ -270,7 +271,7 @@ OVR_EXPORT ovrBool ovr_Initialize()
+     }
+ 
+     CAPI_pNetClient = NetClient::GetInstance();
+-
++    
+ #ifdef OVR_SINGLE_PROCESS
+ 
+     // If the server could not start running,
+@@ -289,7 +290,8 @@ OVR_EXPORT ovrBool ovr_Initialize()
+ #else
+     CAPI_pNetClient->Connect(true);
+ #endif
+-
++    CAPI_pVVRNetClient = VVRNetClient::GetInstance();
++    CAPI_pVVRNetClient->Connect();
+     CAPI_ovrInitializeCalled = 1;
+ 
+     return 1;
+diff -rupN --exclude=.svn --exclude=.DS_Store ./Service/Service_VVRNetClient.cpp ../../../OculusSDK/LibOVR/Src/Service/Service_VVRNetClient.cpp
 --- ./Service/Service_VVRNetClient.cpp	1970-01-01 01:00:00.000000000 +0100
 +++ ../../../OculusSDK/LibOVR/Src/Service/Service_VVRNetClient.cpp	2014-10-28 22:57:29.000000000 +0100
 @@ -0,0 +1,183 @@
@@ -210,7 +227,7 @@ diff -rupN ./Service/Service_VVRNetClient.cpp ../../../OculusSDK/LibOVR/Src/Serv
 +#endif
 +}}
 \ No newline at end of file
-diff -rupN ./Service/Service_VVRNetClient.h ../../../OculusSDK/LibOVR/Src/Service/Service_VVRNetClient.h
+diff -rupN --exclude=.svn --exclude=.DS_Store ./Service/Service_VVRNetClient.h ../../../OculusSDK/LibOVR/Src/Service/Service_VVRNetClient.h
 --- ./Service/Service_VVRNetClient.h	1970-01-01 01:00:00.000000000 +0100
 +++ ../../../OculusSDK/LibOVR/Src/Service/Service_VVRNetClient.h	2014-10-28 22:57:29.000000000 +0100
 @@ -0,0 +1,108 @@
@@ -322,8 +339,7 @@ diff -rupN ./Service/Service_VVRNetClient.h ../../../OculusSDK/LibOVR/Src/Servic
 +}} // namespace OVR::Service
 +
 +#endif /* defined(OVR__Service_VVRNetClient) */
-Binary files ./Tracking/.DS_Store and ../../../OculusSDK/LibOVR/Src/Tracking/.DS_Store differ
-diff -rupN ./Tracking/Tracking_SensorStateReader.cpp ../../../OculusSDK/LibOVR/Src/Tracking/Tracking_SensorStateReader.cpp
+diff -rupN --exclude=.svn --exclude=.DS_Store ./Tracking/Tracking_SensorStateReader.cpp ../../../OculusSDK/LibOVR/Src/Tracking/Tracking_SensorStateReader.cpp
 --- ./Tracking/Tracking_SensorStateReader.cpp	2014-10-28 23:01:55.000000000 +0100
 +++ ../../../OculusSDK/LibOVR/Src/Tracking/Tracking_SensorStateReader.cpp	2014-10-28 23:01:24.000000000 +0100
 @@ -157,8 +157,12 @@ bool SensorStateReader::GetSensorStateAt
@@ -341,7 +357,7 @@ diff -rupN ./Tracking/Tracking_SensorStateReader.cpp ../../../OculusSDK/LibOVR/S
  
      ss.CameraPose = Posef(CenteredFromWorld * lstate.WorldFromCamera);
  
-diff -rupN ./Tracking/Tracking_SensorStateReader.h ../../../OculusSDK/LibOVR/Src/Tracking/Tracking_SensorStateReader.h
+diff -rupN --exclude=.svn --exclude=.DS_Store ./Tracking/Tracking_SensorStateReader.h ../../../OculusSDK/LibOVR/Src/Tracking/Tracking_SensorStateReader.h
 --- ./Tracking/Tracking_SensorStateReader.h	2014-10-28 23:01:51.000000000 +0100
 +++ ../../../OculusSDK/LibOVR/Src/Tracking/Tracking_SensorStateReader.h	2014-10-28 23:01:15.000000000 +0100
 @@ -29,7 +29,7 @@ limitations under the License.
