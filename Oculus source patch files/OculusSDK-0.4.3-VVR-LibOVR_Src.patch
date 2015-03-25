@@ -1,0 +1,371 @@
+diff -rupN --exclude=.svn --exclude=.DS_Store ./OVR_CAPI.cpp ../../../OculusSDK/LibOVR/Src/OVR_CAPI.cpp
+--- ./OVR_CAPI.cpp	2014-10-28 22:55:20.000000000 +0100
++++ ../../../OculusSDK/LibOVR/Src/OVR_CAPI.cpp	2014-11-06 10:18:03.000000000 +0100
+@@ -34,7 +34,7 @@ limitations under the License.
+ 
+ #include "CAPI/CAPI_HMDState.h"
+ #include "CAPI/CAPI_FrameTimeManager.h"
+-
++#include "Service/Service_VVRNetClient.h"
+ #include "Service/Service_NetClient.h"
+ #ifdef OVR_SINGLE_PROCESS
+ #include "Service/Service_NetServer.h"
+@@ -251,7 +251,8 @@ static ovrBool CAPI_SystemInitCalled = 0
+ static ovrBool CAPI_ovrInitializeCalled = 0;
+ 
+ static OVR::Service::NetClient* CAPI_pNetClient = 0;
+-
++static OVR::Service::VVRNetClient* CAPI_pVVRNetClient = 0;
++    
+ OVR_EXPORT void ovr_InitializeRenderingShim()
+ {
+     OVR::System::DirectDisplayInitialize();
+@@ -270,7 +271,7 @@ OVR_EXPORT ovrBool ovr_Initialize()
+     }
+ 
+     CAPI_pNetClient = NetClient::GetInstance();
+-
++    
+ #ifdef OVR_SINGLE_PROCESS
+ 
+     // If the server could not start running,
+@@ -289,7 +290,8 @@ OVR_EXPORT ovrBool ovr_Initialize()
+ #else
+     CAPI_pNetClient->Connect(true);
+ #endif
+-
++    CAPI_pVVRNetClient = VVRNetClient::GetInstance();
++    CAPI_pVVRNetClient->Connect();
+     CAPI_ovrInitializeCalled = 1;
+ 
+     return 1;
+diff -rupN --exclude=.svn --exclude=.DS_Store ./Service/Service_VVRNetClient.cpp ../../../OculusSDK/LibOVR/Src/Service/Service_VVRNetClient.cpp
+--- ./Service/Service_VVRNetClient.cpp	1970-01-01 01:00:00.000000000 +0100
++++ ../../../OculusSDK/LibOVR/Src/Service/Service_VVRNetClient.cpp	2014-10-28 22:57:29.000000000 +0100
+@@ -0,0 +1,183 @@
++/************************************************************************************
++ 
++ Filename    :   Service_VVRNetClient.cpp
++ Content     :   Client for UDP based orientation updater
++ Created     :   August 23, 2014
++ Authors     :   Nicolas Chalon
++ 
++ Copyright   :   Copyright 2014 Oculus VR, Inc. All Rights reserved.
++ 
++ Licensed under the Oculus VR Rift SDK License Version 3.1 (the "License");
++ you may not use the Oculus VR Rift SDK except in compliance with the License,
++ which is provided at the time of installation or download, or which
++ otherwise accompanies this software in either electronic or hard copy form.
++ 
++ You may obtain a copy of the License at
++ 
++ http://www.oculusvr.com/licenses/LICENSE-3.1
++ 
++ Unless required by applicable law or agreed to in writing, the Oculus VR SDK
++ distributed under the License is distributed on an "AS IS" BASIS,
++ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++ See the License for the specific language governing permissions and
++ limitations under the License.
++ 
++ ************************************************************************************/
++#include "Service_VVRNetClient.h"
++
++OVR_DEFINE_SINGLETON(OVR::Service::VVRNetClient);
++
++namespace OVR { namespace Service {
++    
++    using namespace OVR::Net;
++    
++    //// VVRNetClient
++    
++    VVRNetClient::VVRNetClient()
++    {
++        socket = new OVR::Net::UDPSocket;
++        PushDestroyCallbacks();
++    }
++    
++    VVRNetClient::~VVRNetClient(){
++    }
++    
++    void VVRNetClient::OnSystemDestroy()
++    {
++		Terminated = true;
++        Join();
++        Release();
++    }
++    
++    void VVRNetClient::OnThreadDestroy()
++    {
++		Terminated = true;
++        if(socket){
++            Disconnect();
++        }
++    }
++    
++    bool VVRNetClient::Connect() {
++        OVR::Net::BerkleyBindParameters bbp;
++        OVR_DEBUG_LOG(("[VVRNetClient] Initialising UDP listening port on %d", VVRServicePort));
++        bbp.Address = VVRListenHost;
++        bbp.blockingTimeout = 5000;
++        bbp.Port = VVRServicePort;
++        int err = socket->Bind(&bbp);
++        if( err < 0){
++            LogError("[VVRNetClient] Initialising UDP listening port on %d => error %d",VVRServicePort, err);
++            return false;
++        }
++		Start();
++        return true;
++    }
++    
++    void VVRNetClient::Disconnect()
++    {
++		socket->Close();
++		socket->Release();
++		socket = 0;
++		OVR_DEBUG_LOG(("[VVRNetClient] UDP listening socket on %d closed", VVRServicePort));
++    }
++    
++    
++    int VVRNetClient::Run()
++    {
++        SetThreadName("VVRNetClient");
++        while (!Terminated && socket)
++        {
++            
++            socket->Poll(this);
++            if( Timer::GetTicksMs() - lastPacketTime > 50)
++            {
++                //OVR_DEBUG_LOG(("[VVRNetClient] Waiting data ... (%d)",Timer::GetTicksMs()));
++                Thread::MSleep(200);
++            }
++        }
++		return 0;
++    }
++    
++    void VVRNetClient::UDP_OnRecv(Socket* pSocket, uint8_t* pData, uint32_t bytesRead, SockAddr* pSockAddr){
++        if(bytesRead == 24){
++            quaternion << pData;
++#ifdef OVR_BUILD_DEBUG
++            runningAverage.addValue((float)(Timer::GetTicksNanos() - quaternion.timestamp));
++            if(runningAverage.hasEnoughValues()){
++                OVR_DEBUG_LOG(("[VVRNetClient] Average process time = %f ms", runningAverage.getAverage()));
++            }
++#endif
++            lastPacketTime = Timer::GetTicksMs();
++        }
++    }
++    
++    std::ostream& operator << (std::ostream& os, const VVRQuaternion& quaternion){
++        os  << "w:" << quaternion.OVRQuaternion.w << ",x:"
++        << quaternion.OVRQuaternion.x << ",y:"
++        << quaternion.OVRQuaternion.y << ",z:"
++        << quaternion.OVRQuaternion.z;
++        return os;
++    }
++    
++    //// VVRQuaternion
++    
++    VVRQuaternion& VVRQuaternion::operator<< (uint8_t* c){
++        memcpy(dataBuff,c,24);
++        OVRQuaternion.w = unpackFloat(dataBuff);
++        OVRQuaternion.x = unpackFloat(dataBuff+4);
++        OVRQuaternion.y = unpackFloat(dataBuff+8);
++        OVRQuaternion.z = unpackFloat(dataBuff+12);
++        timestamp       = unpackLong(dataBuff+16);
++        return *this;
++    }
++    
++    float VVRQuaternion::unpackFloat(uint8_t *buf) {
++        float output = 0;
++        for(int i=0 ; i < 4 ; ++i ){
++            *((uint8_t*)(&output) + ( 3 - i )) = *(buf+i);
++        }
++        return output;
++    }
++    int64_t VVRQuaternion::unpackLong(uint8_t *buf) {
++        int64_t output = 0;
++        for(int i=0 ; i < 8 ; ++i ){
++            *((uint8_t*)(&output) + (7-i)) = *(buf+i);
++        }
++        return output;
++    }
++    void VVRQuaternion::reset(){
++        OVRQuaternion.w = 1;
++        OVRQuaternion.x = 0;
++        OVRQuaternion.y = 0;
++        OVRQuaternion.z = 0;
++        timestamp       = 0;
++    }
++    
++#ifdef OVR_BUILD_DEBUG
++    //// VVRRunningAverage
++    
++    void VVRRunningAverage::reset(){
++        sum = 0;
++        currentIndex = 0;
++        packCounter = 0;
++    }
++    float VVRRunningAverage::getAverage(){
++        if(packCounter == 0)return NAN;
++        return sum / (packCounter*1000000);
++    }
++    
++    void VVRRunningAverage::addValue(float value){
++        if((currentIndex | packCounter) == 0){
++            memset(values, 0, sizeof(values));
++        }
++        sum -= values[currentIndex];
++        values[currentIndex] = value;
++        sum += values[currentIndex];
++        currentIndex++;
++        if (currentIndex == maxSize) currentIndex = 0;  // faster than %
++        if (packCounter < maxSize) packCounter++;
++    }
++    bool VVRRunningAverage::hasEnoughValues(){
++        return currentIndex % 500 == 0 && packCounter > 0;
++    }
++#endif
++}}
+\ No newline at end of file
+diff -rupN --exclude=.svn --exclude=.DS_Store ./Service/Service_VVRNetClient.h ../../../OculusSDK/LibOVR/Src/Service/Service_VVRNetClient.h
+--- ./Service/Service_VVRNetClient.h	1970-01-01 01:00:00.000000000 +0100
++++ ../../../OculusSDK/LibOVR/Src/Service/Service_VVRNetClient.h	2014-10-28 22:57:29.000000000 +0100
+@@ -0,0 +1,108 @@
++/************************************************************************************
++ 
++ Filename    :   Service_VVRNetClient.h
++ Content     :   Client for UDP orientation based updater
++ Created     :   August 23, 2014
++ Authors     :   Nicolas Chalon
++ 
++ Copyright   :   Copyright 2014 Oculus VR, Inc. All Rights reserved.
++ 
++ Licensed under the Oculus VR Rift SDK License Version 3.1 (the "License");
++ you may not use the Oculus VR Rift SDK except in compliance with the License,
++ which is provided at the time of installation or download, or which
++ otherwise accompanies this software in either electronic or hard copy form.
++ 
++ You may obtain a copy of the License at
++ 
++ http://www.oculusvr.com/licenses/LICENSE-3.1
++ 
++ Unless required by applicable law or agreed to in writing, the Oculus VR SDK
++ distributed under the License is distributed on an "AS IS" BASIS,
++ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++ See the License for the specific language governing permissions and
++ limitations under the License.
++ 
++************************************************************************************/
++#ifndef OVR__Service_VVRNetClient
++#define OVR__Service_VVRNetClient
++
++#include "../OVR_CAPI.h"
++#include "../Kernel/OVR_System.h"
++#include "../Kernel/OVR_Threads.h"
++#include "../Kernel/OVR_Math.h"
++#include "../Kernel/OVR_Timer.h"
++#include "../Net/OVR_NetworkTypes.h"
++#if defined(OVR_OS_WIN32)
++#include "../Net/OVR_Win32_Socket.h"
++#else
++#include "../Net/OVR_Unix_Socket.h"
++#endif
++#include <iostream>
++#include <string>
++#include <vector>
++#include <algorithm>
++
++
++namespace OVR { namespace Service {
++    // Localhost-bound TCP port that the service listens on for VVR informations
++    static const char* VVRListenHost = "::1";
++    static const int VVRServicePort = 27015;
++    
++    using namespace OVR::Net;
++//-------------------------------------------------------------------------------------
++// VVRNetClient
++    class VVRQuaternion{
++        float directionTmp[4];
++        uint8_t dataBuff[24];
++    public:
++        Quat<double> OVRQuaternion;
++        int64_t timestamp;
++    public:
++        VVRQuaternion& operator << (uint8_t* );
++        void reset();
++    public: /*Friends*/
++        friend std::ostream& operator << (std::ostream&, const VVRQuaternion&);
++    private:
++        float unpackFloat(uint8_t *);
++        int64_t unpackLong(uint8_t *);
++    };
++#ifdef OVR_BUILD_DEBUG
++    class VVRRunningAverage {
++    private:
++        double          sum = 0;
++        float           values[1000];
++        uint16_t        currentIndex = 0;
++        uint16_t        maxSize = 1000;
++        uint16_t        packCounter = 0;
++    public:
++        void            addValue(float);
++        float           getAverage();
++        void            reset();
++        bool            hasEnoughValues();
++    };
++#endif
++    class VVRNetClient : public Thread, public SocketEvent_UDP,public SystemSingletonBase<VVRNetClient>
++    {
++        // implemented methods
++        OVR_DECLARE_SINGLETON(VVRNetClient);
++        virtual void    OnThreadDestroy();
++        virtual int     Run();
++        virtual void    UDP_OnRecv(Socket* pSocket, uint8_t* pData, uint32_t bytesRead, SockAddr* pSockAddr);
++    public:
++        bool            Connect();
++        void            Disconnect();
++        VVRQuaternion   quaternion;
++    private:
++        long            now();
++    private:
++        UDPSocket*      socket;
++        bool            Terminated = false; // Thread termination flag
++        uint32_t        lastPacketTime = 0;
++#ifdef OVR_BUILD_DEBUG
++        VVRRunningAverage   runningAverage;
++#endif
++    };
++//-------------------------------------------------------------------------------------
++}} // namespace OVR::Service
++
++#endif /* defined(OVR__Service_VVRNetClient) */
+diff -rupN --exclude=.svn --exclude=.DS_Store ./Tracking/Tracking_SensorStateReader.cpp ../../../OculusSDK/LibOVR/Src/Tracking/Tracking_SensorStateReader.cpp
+--- ./Tracking/Tracking_SensorStateReader.cpp	2014-10-28 23:01:55.000000000 +0100
++++ ../../../OculusSDK/LibOVR/Src/Tracking/Tracking_SensorStateReader.cpp	2014-10-28 23:01:24.000000000 +0100
+@@ -157,8 +157,12 @@ bool SensorStateReader::GetSensorStateAt
+ 	}
+ 
+ 	ss.HeadPose = PoseStatef(lstate.WorldFromImu);
+-	// Do prediction logic and ImuFromCpf transformation
+-	ss.HeadPose.ThePose = Posef(CenteredFromWorld * calcPredictedPose(lstate.WorldFromImu, pdt) * lstate.ImuFromCpf);
++    
++    // Create Posed object from VectionVR information
++    Posed VVRDisplacement = Posed(OVR::Service::VVRNetClient::GetInstance()->quaternion.OVRQuaternion,Vector3d());
++    
++    // Do prediction logic and ImuFromCpf transformation + apply VEctionVR displacement information
++    ss.HeadPose.ThePose = Posef(CenteredFromWorld * calcPredictedPose(lstate.WorldFromImu, pdt) * lstate.ImuFromCpf * VVRDisplacement);
+ 
+     ss.CameraPose = Posef(CenteredFromWorld * lstate.WorldFromCamera);
+ 
+diff -rupN --exclude=.svn --exclude=.DS_Store ./Tracking/Tracking_SensorStateReader.h ../../../OculusSDK/LibOVR/Src/Tracking/Tracking_SensorStateReader.h
+--- ./Tracking/Tracking_SensorStateReader.h	2014-10-28 23:01:51.000000000 +0100
++++ ../../../OculusSDK/LibOVR/Src/Tracking/Tracking_SensorStateReader.h	2014-10-28 23:01:15.000000000 +0100
+@@ -29,7 +29,7 @@ limitations under the License.
+ 
+ #include "../Kernel/OVR_Lockless.h"
+ #include "Tracking_SensorState.h"
+-
++#include "../Service/Service_VVRNetClient.h"
+ #include "../OVR_Profile.h"
+ 
+ namespace OVR { namespace Tracking {
