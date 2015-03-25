@@ -7,6 +7,9 @@ VR Stabilizer brings this extra step to the Oculus rift. For more information pl
 
 Go to **Oculus source patch files** and follow the tutorial described in there 
 
+*Binaries*
+
+In the Binaries folder, you will find pre-compiled version for specific games.
 
 ###### *Vection VR is in no way affiliated with Oculus VR inc.* ######
 
