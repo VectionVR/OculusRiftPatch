@@ -1,8 +1,8 @@
-*Pre-compiled version of updated Oculus library*
+***Pre-compiled version of updated Oculus library***
 
 The folder here above contains pre-compiled binary version of Oculus library adapted to specific games
 
-*How to use*
+***How to use***
 - Exit application if running.
 - Browse to installation folder.
 - Find the file with the same name as the provided one.
